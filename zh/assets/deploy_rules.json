@@ -1,0 +1,75 @@
+{
+  "schema_version": "2.0",
+  "skill": "deploy-contract",
+  "description": "部署契约执行规则库 v2.0：白名单 / 次数上限 / 间隔阈值 / 计数口径 / 存储 / 原子状态 / 密钥预检 / 破例 / 撤销 / 审计汇入（可复算，单一事实源）。",
+  "contract_source": "抽象部署契约（可配置）：单日部署≤6次、同函数≤3次、间隔≥30秒；白名单可配置；破例须部署负责人书面放行原话逐字入日志。",
+  "whitelist_functions": [
+    "syncKnowledge",
+    "identify"
+  ],
+  "limits": {
+    "daily_deploy_max": 6,
+    "same_function_daily_max": 3,
+    "min_interval_seconds": 30
+  },
+  "counting": {
+    "count_scope": "allow-events-only",
+    "daily_window_tz": "+08:00",
+    "daily_window_note": "当日窗口以 Asia/Shanghai (+08:00, 无 DST) 为准；拦截(DENY)不计入配额，仅 ALLOW 占名额",
+    "function_normalization": "exact"
+  },
+  "storage": {
+    "base_dir_env": "LOCALAPPDATA",
+    "subpath": "Lanzhi/deploy-contract",
+    "log_subdir": "log",
+    "state_subdir": "state",
+    "reports_subdir": "reports",
+    "undo_subdir": "undo",
+    "legacy_deploy_log": "assets/deploy_log"
+  },
+  "state": {
+    "lock_timeout_seconds": 20,
+    "stale_lock_seconds": 30,
+    "log_sha_note": "state 记录 deploy_log 内容指纹 log_sha；外部直接追加导致指纹失配时，计数以日志重放为准"
+  },
+  "self_deploy_policy": "本系统自身云函数部署同走此闸门（白名单内函数才能部署，不例外）",
+  "precheck": {
+    "secret_scan": true,
+    "script_env": "LANZHI_SECRET_GUARD_SCRIPT",
+    "script_candidates": [
+      "../secret-guardian/assets/scripts/secret_guard.py",
+      "secret_guard.py"
+    ],
+    "deep": true,
+    "fail_safe": "deny"
+  },
+  "override_policy": {
+    "method": "部署负责人在对话中书面放行原话（逐字入日志，无二次确认按钮）",
+    "log": "原话自动逐字入 deploy_log note 列",
+    "scope": "原话须含目标函数名（范围绑定）；仅当次部署有效，不延续",
+    "single_use": true,
+    "consumption": "按原话 sha256 前16位单次消耗；换函数 / 次日 / 再次提交均不延续",
+    "note_prefix": "部署负责人书面放行原话（逐字）：",
+    "bypass": "仅旁路 当日≤6 / 同函数≤3 / 间隔≥30s；不可绕过 白名单 与 密钥预检"
+  },
+  "undo": {
+    "cleanable_dirs": ["reports"],
+    "protected": ["log", "state"],
+    "keep": 3,
+    "note": "审计类日志默认只追加不删除；undo 仅覆盖用户主动清理的报告文件，破例原话日志不受 undo 影响"
+  },
+  "audit_link": {
+    "env_script": "LANZHI_AUDIT_SCRIPT",
+    "candidates": [
+      "../audit/assets/scripts/audit_core.py",
+      "audit_core.py"
+    ],
+    "env_base": "LANZHI_AUDIT_BASE",
+    "ingest_event_types": ["deploy.allow", "deploy.deny", "deploy.override"]
+  },
+  "event_contract": {
+    "columns": ["ts", "source", "event_type", "actor", "action", "target", "result", "severity", "rule_id", "evidence_hash", "ref_id", "human_decision", "undo_ref", "note", "status", "schema_version"],
+    "override_column": "note（原话逐字）",
+    "redaction": "密钥预检只传判定结果(clean/found+rule_id)，0 密钥值；报告全量 0 敏感值"
+  }
+}

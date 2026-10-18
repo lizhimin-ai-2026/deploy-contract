@@ -1,0 +1,75 @@
+{
+  "schema_version": "2.0",
+  "skill": "deploy-contract",
+  "description": "Deploy Contract Gate rule set v2.0: whitelist / daily & per-function deploy caps / interval / count semantics / storage / atomic state / secret precheck / override / undo / audit link (all computable, single source of truth).",
+  "contract_source": "Abstract deploy contract (configurable): max 6 deploys per day, max 3 deploys per function per day, minimum 30s interval between deploys; whitelist is configurable; an override requires the deploy owner's written verbatim release quoted into the log.",
+  "whitelist_functions": [
+    "syncKnowledge",
+    "identify"
+  ],
+  "limits": {
+    "daily_deploy_max": 6,
+    "same_function_daily_max": 3,
+    "min_interval_seconds": 30
+  },
+  "counting": {
+    "count_scope": "allow-events-only",
+    "daily_window_tz": "+08:00",
+    "daily_window_note": "The current day window uses Asia/Shanghai (+08:00, no DST); denied events do not consume quota, only ALLOW events count",
+    "function_normalization": "exact"
+  },
+  "storage": {
+    "base_dir_env": "LOCALAPPDATA",
+    "subpath": "Lanzhi/deploy-contract",
+    "log_subdir": "log",
+    "state_subdir": "state",
+    "reports_subdir": "reports",
+    "undo_subdir": "undo",
+    "legacy_deploy_log": "assets/deploy_log"
+  },
+  "state": {
+    "lock_timeout_seconds": 20,
+    "stale_lock_seconds": 30,
+    "log_sha_note": "State records a content fingerprint (log_sha) of deploy_log; if an external append desyncs the fingerprint, counts are replayed from the log"
+  },
+  "self_deploy_policy": "The host system's own function deploys go through the same gate (only whitelisted functions may deploy, no exception)",
+  "precheck": {
+    "secret_scan": true,
+    "script_env": "LANZHI_SECRET_GUARD_SCRIPT",
+    "script_candidates": [
+      "../secret-guardian/assets/scripts/secret_guard.py",
+      "secret_guard.py"
+    ],
+    "deep": true,
+    "fail_safe": "deny"
+  },
+  "override_policy": {
+    "method": "Deploy owner provides a written verbatim release quote in chat (quoted into the log verbatim, no secondary confirmation button)",
+    "log": "The verbatim quote is auto-appended to the deploy log note column",
+    "scope": "The quote must contain the target function name (scope binding); valid for that single deploy only, not carried over",
+    "single_use": true,
+    "consumption": "Consumed once by sha256(first 16 chars) of the verbatim quote; not carried to another function / next day / re-submit",
+    "note_prefix": "Deploy owner written release quote (verbatim): ",
+    "bypass": "Only bypasses daily<=6 / per-function<=3 / interval>=30s; cannot bypass whitelist or secret precheck"
+  },
+  "undo": {
+    "cleanable_dirs": ["reports"],
+    "protected": ["log", "state"],
+    "keep": 3,
+    "note": "Audit logs are append-only by default; undo only covers user-initiated report cleanup, and override-quote logs are not subject to undo"
+  },
+  "audit_link": {
+    "env_script": "LANZHI_AUDIT_SCRIPT",
+    "candidates": [
+      "../audit/assets/scripts/audit_core.py",
+      "audit_core.py"
+    ],
+    "env_base": "LANZHI_AUDIT_BASE",
+    "ingest_event_types": ["deploy.allow", "deploy.deny", "deploy.override"]
+  },
+  "event_contract": {
+    "columns": ["ts", "source", "event_type", "actor", "action", "target", "result", "severity", "rule_id", "evidence_hash", "ref_id", "human_decision", "undo_ref", "note", "status", "schema_version"],
+    "override_column": "note (verbatim quote)",
+    "redaction": "Secret precheck transmits verdict only (clean/found + rule_id), zero secret values; reports contain zero sensitive values"
+  }
+}
